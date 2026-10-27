@@ -1,0 +1,39 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: python -m py_compile app/*.py
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build image in ACR
+        run: |
+          az acr build -r "${{ vars.ACR_NAME }}" -t "ramilevy-mcp:${{ github.sha }}" .
+
+      - name: Roll out new revision
+        run: |
+          az containerapp update \
+            -g "${{ vars.RESOURCE_GROUP }}" -n "${{ vars.CONTAINER_APP }}" \
+            --image "${{ vars.ACR_NAME }}.azurecr.io/ramilevy-mcp:${{ github.sha }}"
